@@ -14,7 +14,7 @@ module System.LibVirt.Errors
   where
 
 import qualified Control.Exception as E
-import Data.Generics
+import Data.Generics (Data, Typeable)
 import Foreign
 import Foreign.C.Types
 import Foreign.C.String

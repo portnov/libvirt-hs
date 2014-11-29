@@ -78,7 +78,7 @@ module System.LibVirt.Foreign
   ) where
 
 import Data.Bits
-import Data.Generics
+import Data.Generics ()
 import Foreign
 import Foreign.C.Types
 import Foreign.C.String
