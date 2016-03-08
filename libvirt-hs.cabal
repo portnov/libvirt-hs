@@ -41,7 +41,7 @@ Library
   
   Build-tools:         c2hs
 
-  Extra-libraries:     "virt"
+  pkgconfig-depends:   libvirt
 
 Source-repository head
   type: git
