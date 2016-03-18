@@ -8,9 +8,11 @@ module System.LibVirt.Errors
   (Error (..), ErrorLevel (..),
    ErrorDomain (..), ErrorNumber (..),
    catchVirtError,
-   exceptionOnMinusOne,
-   ptrToConnection, ptrToDomain, ptrToNetwork,
-   connectionToPtr, domainToPtr, networkToPtr)
+   exceptionOnMinusOne, boolExceptionOnMinusOne,
+   ptrToConnection, ptrToDomain, ptrToNetwork, ptrToStream,
+   ptrToStoragePool, ptrToStorageVol,
+   connectionToPtr, domainToPtr, networkToPtr, streamToPtr,
+   storagePoolToPtr, storageVolToPtr)
   where
 
 import qualified Control.Exception as E
@@ -106,6 +108,13 @@ exceptionOnMinusOne x = do
     then handleError' (fromIntegral x)
     else return (fromIntegral x)
 
+boolExceptionOnMinusOne :: CInt -> IO Bool
+boolExceptionOnMinusOne x =
+  case x of
+    -1 -> handleError
+    0  -> return False
+    _  -> return True
+
 handleError :: IO a
 handleError = do
     merr <- getLastError
@@ -152,4 +161,34 @@ ptrToNetwork' ptr = return $ Network (castPtr ptr)
 
 networkToPtr :: Network -> Ptr ()
 networkToPtr (Network ptr) = castPtr ptr
+
+ptrToStream :: Ptr () -> IO Stream
+ptrToStream ptr
+  | ptr == nullPtr = handleError
+  | otherwise      = return $ Stream (castPtr ptr)
+
+streamToPtr :: Stream -> Ptr ()
+streamToPtr (Stream ptr) = castPtr ptr
+
+ptrToStoragePool :: Ptr () -> IO StoragePool
+ptrToStoragePool ptr
+  | ptr == nullPtr = handleError
+  | otherwise      = return $ StoragePool (castPtr ptr)
+
+ptrToStoragePool' :: Ptr () -> IO StoragePool
+ptrToStoragePool' ptr = return $ StoragePool (castPtr ptr)
+
+storagePoolToPtr :: StoragePool -> Ptr ()
+storagePoolToPtr (StoragePool ptr) = castPtr ptr
+
+ptrToStorageVol :: Ptr () -> IO StorageVol
+ptrToStorageVol ptr
+  | ptr == nullPtr = handleError
+  | otherwise      = return $ StorageVol (castPtr ptr)
+
+ptrToStorageVol' :: Ptr () -> IO StorageVol
+ptrToStorageVol' ptr = return $ StorageVol (castPtr ptr)
+
+storageVolToPtr :: StorageVol -> Ptr ()
+storageVolToPtr (StorageVol ptr) = castPtr ptr
 

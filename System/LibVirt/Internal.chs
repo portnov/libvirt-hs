@@ -7,7 +7,8 @@
 -- | Internal types definitions and low-level functions.
 -- This module is not supposed to be imported by client code.
 module System.LibVirt.Internal
-  (Connection (..), Domain (..), Network (..)
+  (Connection (..), Domain (..), Network (..),
+   Stream (..), StoragePool (..), StorageVol (..)
   ) where
 
 import Data.Generics
@@ -42,3 +43,29 @@ deriving instance Typeable Network
 instance Show Network where
   show (Network ptr) = "<Network: " ++ show ptr ++ ">"
 
+{# pointer *virStreamPtr as Stream newtype #}
+
+deriving instance Eq Stream
+deriving instance Data Stream
+deriving instance Typeable Stream
+
+instance Show Stream where
+  show (Stream ptr) = "<Stream: " ++ show ptr ++ ">"
+
+{# pointer *virStoragePoolPtr as StoragePool newtype #}
+
+deriving instance Eq StoragePool
+deriving instance Data StoragePool
+deriving instance Typeable StoragePool
+
+instance Show StoragePool where
+  show (StoragePool ptr) = "<StoragePool: " ++ show ptr ++ ">"
+
+{# pointer *virStorageVolPtr as StorageVol newtype #}
+
+deriving instance Eq StorageVol
+deriving instance Data StorageVol
+deriving instance Typeable StorageVol
+
+instance Show StorageVol where
+  show (StorageVol ptr) = "<StorageVol: " ++ show ptr ++ ">"
