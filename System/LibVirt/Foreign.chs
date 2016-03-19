@@ -11,11 +11,23 @@ module System.LibVirt.Foreign
    DomainInfo (..),
    DomainState (..),
    Stream,
+   StreamFlags (..),
    DomainCreateFlags (..),
    DomainXMLFlags (..),
    SecurityLabel (..),
    SecurityModel (..),
    NodeInfo (..),
+   StoragePoolInfo (..),
+   StoragePoolState (..),
+   StoragePoolBuildFlags (..),
+   StoragePoolDeleteFlags (..),
+   StorageVolInfo (..),
+   StorageVolType (..),
+   StorageVolDeleteFlags (..),
+   StorageVolWipeAlgorithm (..),
+   StorageXMLFlags (..),
+   StorageVolCreateFlags (..),
+   StorageVolResizeFlags (..),
    SchedParameterType (..),
    ConnectCredential (..),
    DomainEventID (..),
@@ -65,6 +77,31 @@ module System.LibVirt.Foreign
    getNetworkName,
    getNetworkXML,
 
+   -- * Storage Pool management
+   runningStoragePoolsCount, definedStoragePoolsCount,
+   runningStoragePoolsNames, definedStoragePoolsNames,
+   lookupStoragePoolName, lookupStoragePoolUUID,
+   lookupStoragePoolVolume, createStoragePoolXML,
+   defineStoragePoolXML, undefineStoragePool,
+   buildStoragePool, createStoragePool,
+   destroyStoragePool, deleteStoragePool,
+   refStoragePool, freeStoragePool, refreshStoragePool,
+   getStoragePoolName, getStoragePoolInfo, getStoragePoolXML,
+   getStoragePoolAutostart, setStoragePoolAutostart,
+   storagePoolIsActive, storagePoolIsPersistent,
+
+   -- * Storage Volume management
+   storagePoolVolsCount, storagePoolVolsNames,
+   getStorageVolConnection,
+   lookupStorageVolName, lookupStorageVolKey, lookupStorageVolPath,
+   getStorageVolName, getStorageVolKey, getStorageVolInfo,
+   getStorageVolXML, getStorageVolPath,
+   createStorageVolXML, createStorageVolXMLFrom,
+   downloadStorageVol, uploadStorageVol,
+   deleteStorageVol, wipeStorageVol, wipeStorageVolWith,
+   refStorageVol, freeStorageVol,
+   resizeStorageVol,
+
    -- * callback management
    eventRegisterDefaultImpl,
    eventRunDefaultImpl,
@@ -79,9 +116,13 @@ module System.LibVirt.Foreign
 
 import Data.Bits
 import Data.Generics ()
+import Data.Functor
 import Foreign
 import Foreign.C.Types
 import Foreign.C.String
+import System.Posix.IO
+import System.Posix.Types
+import System.Posix.Files
 
 {# import System.LibVirt.Internal #}
 {# import System.LibVirt.Errors #}
@@ -124,7 +165,17 @@ data DomainInfo = DomainInfo {
 data NetworkXMLFlags = NetworkXML
   deriving (Eq, Show, Enum)
 
-{# pointer *virStreamPtr as Stream newtype #}
+{# enum StreamFlags {underscoreToCase} deriving (Eq, Show) #}
+
+{# fun virStreamNew as newStream
+    { connectionToPtr `Connection',
+      flags2int       `[StreamFlags]' } -> `Stream' ptrToStream* #}
+
+{# fun virStreamFinish as finishStream
+    { streamToPtr `Stream' } -> `Int' exceptionOnMinusOne* #}
+
+{# fun virStreamFree as freeStream
+    { streamToPtr `Stream' } -> `Int' exceptionOnMinusOne* #}
 
 data SecurityLabel = SecurityLabel {
   slLabel :: String,
@@ -152,6 +203,34 @@ data NodeInfo = NodeInfo {
   deriving (Eq, Show)
 
 {# pointer *virNodeInfoPtr as NodeInfoPtr -> NodeInfo #}
+
+data StoragePoolInfo = StoragePoolInfo {
+  spiState :: StoragePoolState,
+  spiCapacity :: CULLong,
+  spiAllocation :: CULLong,
+  spiAvailable :: CULLong }
+  deriving (Eq, Show)
+
+{# pointer *virStoragePoolInfoPtr as StoragePoolInfoPtr -> StoragePoolInfo #}
+
+{# enum StoragePoolState {underscoreToCase} deriving (Eq, Show) #}
+{# enum StoragePoolBuildFlags {underscoreToCase} deriving (Eq, Show) #}
+{# enum StoragePoolDeleteFlags {underscoreToCase} deriving (Eq, Show) #}
+
+data StorageVolInfo = StorageVolInfo {
+  sviType :: StorageVolType,
+  sviCapacity :: CULLong,
+  sviAllocation :: CULLong }
+  deriving (Eq, Show)
+
+{# pointer *virStorageVolInfoPtr as StorageVolInfoPtr -> StorageVolInfo #}
+
+{# enum StorageVolType {underscoreToCase} deriving (Eq, Show) #}
+{# enum StorageVolDeleteFlags {underscoreToCase} deriving (Eq, Show) #}
+{# enum StorageVolWipeAlgorithm {underscoreToCase} deriving (Eq, Show) #}
+{# enum StorageXMLFlags {underscoreToCase} deriving (Eq, Show) #}
+{# enum StorageVolCreateFlags {underscoreToCase} deriving (Eq, Show) #}
+{# enum StorageVolResizeFlags {underscoreToCase} deriving (Eq, Show) #}
 
 {# enum SchedParameterType {underscoreToCase} deriving (Eq, Show) #}
 
@@ -380,6 +459,251 @@ withCUString str fn = withCString str (fn . castPtr)
 {# fun virConnectGetCapabilities as connectGetCapabilities
       { connectionToPtr `Connection' } -> `String' #}
 
+{# fun virConnectNumOfStoragePools as runningStoragePoolsCount
+    { connectionToPtr `Connection' } -> `Int' exceptionOnMinusOne* #}
+
+runningStoragePoolsNames :: Connection -> IO [String]
+runningStoragePoolsNames conn = do
+  cn <- {# call virConnectNumOfStoragePools #} (connectionToPtr conn)
+  let n = fromIntegral cn
+  allocaArray n $ \nptr -> do
+    {# call virConnectListStoragePools #} (connectionToPtr conn) nptr cn
+    mapM peekCString =<< peekArray n nptr
+
+{# fun virConnectNumOfDefinedStoragePools as definedStoragePoolsCount
+    { connectionToPtr `Connection' } -> `Int' exceptionOnMinusOne* #}
+
+definedStoragePoolsNames :: Connection -> IO [String]
+definedStoragePoolsNames conn = do
+  cn <- {# call virConnectNumOfDefinedStoragePools #} (connectionToPtr conn)
+  let n = fromIntegral cn
+  allocaArray n $ \nptr -> do
+    {# call virConnectListDefinedStoragePools #} (connectionToPtr conn) nptr cn
+    mapM peekCString =<< peekArray n nptr
+
+{# fun virStoragePoolLookupByName as lookupStoragePoolName
+    { connectionToPtr `Connection',
+                      `String' } -> `StoragePool' ptrToStoragePool* #}
+
+{# fun virStoragePoolLookupByUUID as lookupStoragePoolUUID
+    { connectionToPtr `Connection',
+      withCUString*   `String' } -> `StoragePool' ptrToStoragePool* #}
+
+{# fun virStoragePoolLookupByVolume as lookupStoragePoolVolume
+    { storageVolToPtr `StorageVol' } -> `StoragePool' ptrToStoragePool* #}
+
+{# fun virStoragePoolCreateXML as createStoragePoolXML
+    { connectionToPtr `Connection',
+                      `String',
+      id              `CUInt' } -> `StoragePool' ptrToStoragePool* #}
+
+{# fun virStoragePoolDefineXML as defineStoragePoolXML
+    { connectionToPtr `Connection',
+                      `String',
+      id              `CUInt' } -> `StoragePool' ptrToStoragePool* #}
+
+{# fun virStoragePoolBuild as buildStoragePool
+    { storagePoolToPtr `StoragePool',
+      flags2int        `[StoragePoolBuildFlags]' } -> `Int' exceptionOnMinusOne* #}
+
+{# fun virStoragePoolUndefine as undefineStoragePool
+    { storagePoolToPtr `StoragePool' } -> `Int' exceptionOnMinusOne* #}
+
+{# fun virStoragePoolCreate as createStoragePool
+    { storagePoolToPtr `StoragePool',
+      id               `CUInt' } -> `Int' exceptionOnMinusOne* #}
+
+{# fun virStoragePoolDestroy as destroyStoragePool
+    { storagePoolToPtr `StoragePool' } -> `Int' exceptionOnMinusOne* #}
+
+{# fun virStoragePoolDelete as deleteStoragePool
+    { storagePoolToPtr `StoragePool',
+      flags2int        `[StoragePoolDeleteFlags]' } -> `Int' exceptionOnMinusOne* #}
+
+{# fun virStoragePoolRef as refStoragePool
+    { storagePoolToPtr `StoragePool' } -> `Int' exceptionOnMinusOne* #}
+
+{# fun virStoragePoolFree as freeStoragePool
+    { storagePoolToPtr `StoragePool' } -> `Int' exceptionOnMinusOne* #}
+
+{# fun virStoragePoolRefresh as refreshStoragePool
+    { storagePoolToPtr `StoragePool',
+      id               `CUInt' } -> `Int' exceptionOnMinusOne* #}
+
+{# fun virStoragePoolGetName as getStoragePoolName
+    { storagePoolToPtr `StoragePool' } -> `String' #}
+
+getStoragePoolInfo :: StoragePool -> IO StoragePoolInfo
+getStoragePoolInfo ptr = do
+  allocaBytes {# sizeof virStoragePoolInfo #} $ \iptr -> do
+         i <- {# call virStoragePoolGetInfo #} (storagePoolToPtr ptr) iptr
+         state      <- {# get StoragePoolInfo->state      #} iptr
+         capacity   <- {# get StoragePoolInfo->capacity   #} iptr
+         allocation <- {# get StoragePoolInfo->allocation #} iptr
+         available  <- {# get StoragePoolInfo->available  #} iptr
+         return $ StoragePoolInfo {
+                    spiState      = toEnum (fromIntegral state),
+                    spiCapacity   = fromIntegral capacity,
+                    spiAllocation = fromIntegral allocation,
+                    spiAvailable  = fromIntegral available }
+
+{# fun virStoragePoolGetXMLDesc as getStoragePoolXML
+    { storagePoolToPtr `StoragePool',
+      flags2int        `[StorageXMLFlags]' } -> `String' #}
+
+getStoragePoolAutostart :: StoragePool -> IO Bool
+getStoragePoolAutostart ptr = do
+  alloca $ \aptr -> do
+    {# call virStoragePoolGetAutostart #} (storagePoolToPtr ptr) aptr >>=
+      exceptionOnMinusOne
+    toBool <$> peek aptr
+
+{# fun virStoragePoolSetAutostart as setStoragePoolAutostart
+    { storagePoolToPtr `StoragePool',
+      fromBool         `Bool' } -> `Int' exceptionOnMinusOne* #}
+
+{# fun virStoragePoolIsActive as storagePoolIsActive
+    { storagePoolToPtr `StoragePool' } -> `Bool' boolExceptionOnMinusOne* #}
+
+{# fun virStoragePoolIsPersistent as storagePoolIsPersistent
+    { storagePoolToPtr `StoragePool' } -> `Bool' boolExceptionOnMinusOne* #}
+
+{# fun virStoragePoolNumOfVolumes as storagePoolVolsCount
+    { storagePoolToPtr `StoragePool' } -> `Int' exceptionOnMinusOne* #}
+
+storagePoolVolsNames :: StoragePool -> IO [String]
+storagePoolVolsNames pool = do
+  cn <- {# call virStoragePoolNumOfVolumes #} (storagePoolToPtr pool)
+  let n = fromIntegral cn
+  allocaArray n $ \nptr -> do
+    {# call virStoragePoolListVolumes #} (storagePoolToPtr pool) nptr cn
+    mapM peekCString =<< peekArray n nptr
+
+{# fun virStorageVolGetConnect as getStorageVolConnection
+    { storageVolToPtr `StorageVol' } -> `Connection' ptrToConnection* #}
+
+{# fun virStorageVolLookupByName as lookupStorageVolName
+    { storagePoolToPtr `StoragePool', `String' } -> `StorageVol' ptrToStorageVol* #}
+
+{# fun virStorageVolLookupByKey as lookupStorageVolKey
+    { connectionToPtr `Connection', `String' } -> `StorageVol' ptrToStorageVol* #}
+
+{# fun virStorageVolLookupByPath as lookupStorageVolPath
+    { connectionToPtr `Connection', `String' } -> `StorageVol' ptrToStorageVol* #}
+
+{# fun virStorageVolGetName as getStorageVolName
+    { storageVolToPtr `StorageVol' } -> `String' #}
+
+getStorageVolInfo :: StorageVol -> IO StorageVolInfo
+getStorageVolInfo ptr = do
+  allocaBytes {# sizeof virStorageVolInfo #} $ \iptr -> do
+         i <- {# call virStorageVolGetInfo #} (storageVolToPtr ptr) iptr
+         type'      <- {# get StorageVolInfo->type       #} iptr
+         capacity   <- {# get StorageVolInfo->capacity   #} iptr
+         allocation <- {# get StorageVolInfo->allocation #} iptr
+         return $ StorageVolInfo {
+                    sviType       = toEnum (fromIntegral type'),
+                    sviCapacity   = fromIntegral capacity,
+                    sviAllocation = fromIntegral allocation }
+
+{# fun virStorageVolGetXMLDesc as getStorageVolXML
+    { storageVolToPtr `StorageVol',
+      id              `CUInt' } -> `String' #}
+
+{# fun virStorageVolGetPath as getStorageVolPath
+    { storageVolToPtr `StorageVol' } -> `String' #}
+
+{# fun virStorageVolGetKey as getStorageVolKey
+    { storageVolToPtr `StorageVol' } -> `String' #}
+
+{# fun virStorageVolResize as resizeStorageVol
+    { storageVolToPtr `StorageVol',
+      id              `CULLong',
+      id              `CUInt' } -> `Int' exceptionOnMinusOne* #}
+
+{# fun virStorageVolCreateXML as createStorageVolXML
+    { storagePoolToPtr `StoragePool',
+                       `String',
+      flags2int        `[StorageVolCreateFlags]' } -> `StorageVol' ptrToStorageVol* #}
+
+{# fun virStorageVolCreateXMLFrom as createStorageVolXMLFrom
+    { storagePoolToPtr `StoragePool',
+                       `String',
+      storageVolToPtr  `StorageVol',
+      flags2int        `[StorageVolCreateFlags]' } -> `StorageVol' ptrToStorageVol* #}
+
+downloadStorageVol :: FilePath -> StorageVol -> IO ()
+downloadStorageVol path vol = downloadStorageVolPartial path vol 0 0
+
+downloadStorageVolPartial :: FilePath -> StorageVol -> CULLong -> CULLong -> IO ()
+downloadStorageVolPartial path vol off len = do
+  sink <- mkSink $ \st buf nbytes opaque -> do
+    fd <- peek (castPtr opaque)
+    fromIntegral <$> fdWriteBuf fd (castPtr buf) (fromIntegral nbytes)
+  conn <- getStorageVolConnection vol
+  st <- newStream conn []
+  {# call virStorageVolDownload #}
+    (storageVolToPtr vol) (streamToPtr st) off len 0 >>= exceptionOnMinusOne
+  fd <- createFile path stdFileMode
+  alloca $ \fdptr -> do
+    poke fdptr fd
+    {# call virStreamRecvAll #}
+      (streamToPtr st) sink (castPtr fdptr) >>= exceptionOnMinusOne
+    closeFd fd
+    finishStream st
+    freeStream st
+    freeHaskellFunPtr sink
+
+type SinkCallback a = Ptr () -> Ptr CChar -> CULong -> Ptr () -> IO CInt
+
+foreign import ccall "wrapper"
+  mkSink :: SinkCallback a -> IO (FunPtr (SinkCallback a))
+
+uploadStorageVol :: FilePath -> StorageVol -> IO ()
+uploadStorageVol path vol = uploadStorageVolPartial path vol 0 0
+
+uploadStorageVolPartial :: FilePath -> StorageVol -> CULLong -> CULLong -> IO ()
+uploadStorageVolPartial path vol off len = do
+  source <- mkSource $ \st buf nbytes opaque -> do
+    fd <- peek (castPtr opaque)
+    fromIntegral <$> fdReadBuf fd (castPtr buf) (fromIntegral nbytes)
+  conn <- getStorageVolConnection vol
+  st <- newStream conn []
+  {# call virStorageVolUpload #}
+    (storageVolToPtr vol) (streamToPtr st) off len 0 >>= exceptionOnMinusOne
+  fd <- openFd path ReadOnly Nothing defaultFileFlags
+  alloca $ \fdptr -> do
+    poke fdptr fd
+    {# call virStreamSendAll #}
+      (streamToPtr st) source (castPtr fdptr) >>= exceptionOnMinusOne
+    closeFd fd
+    finishStream st
+    freeStream st
+    freeHaskellFunPtr source
+
+type SourceCallback a = Ptr () -> Ptr CChar -> CULong -> Ptr () -> IO CInt
+
+foreign import ccall "wrapper"
+  mkSource :: SourceCallback a -> IO (FunPtr (SourceCallback a))
+
+{# fun virStorageVolDelete as deleteStorageVol
+    { storageVolToPtr `StorageVol',
+      id               `CUInt' } -> `Int' exceptionOnMinusOne* #}
+
+{# fun virStorageVolWipe as wipeStorageVol
+    { storageVolToPtr `StorageVol',
+      id              `CUInt' } -> `Int' exceptionOnMinusOne* #}
+
+{# fun virStorageVolWipePattern as wipeStorageVolWith
+    { storageVolToPtr `StorageVol',
+                      `StorageVolWipeAlgorithm',
+      id              `CUInt' } -> `Int' exceptionOnMinusOne* #}
+
+{# fun virStorageVolRef as refStorageVol
+    { storageVolToPtr `StorageVol' } -> `Int' exceptionOnMinusOne* #}
+
+{# fun virStorageVolFree as freeStorageVol
+    { storageVolToPtr `StorageVol' } -> `Int' exceptionOnMinusOne* #}
 
 type ConnectDomainEventGenericCallback a = Connection -> Domain -> Ptr a -> IO ()
 type FreeCallback = Ptr () -> IO ()
