@@ -247,8 +247,14 @@ data ConnectCredential = ConnectCredential {
 
 {# fun virInitialize as initialize { } -> `Int' exceptionOnMinusOne* #}
 
-{# fun virConnectOpen as openConnection
-    { `String' } -> `Connection' ptrToConnection* #}
+foreign import ccall "&" virConnectAuthPtrDefault :: Ptr (Ptr ())
+
+openConnection :: String -> IO Connection
+openConnection uri =
+  withCString uri $ \str -> do
+    authPtr <- peek virConnectAuthPtrDefault
+    connPtr <- {# call virConnectOpenAuth #} str authPtr 0
+    ptrToConnection connPtr
 
 {# fun virConnectClose as closeConnection
     { connectionToPtr `Connection' } -> `Int' exceptionOnMinusOne* #}
