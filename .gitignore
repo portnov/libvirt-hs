@@ -8,4 +8,5 @@ System/LibVirt/Errors.hs
 System/LibVirt/Internal.hs
 dist/
 cabal-dev/
+.stack-work/
 Test
