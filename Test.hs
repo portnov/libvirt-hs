@@ -17,6 +17,7 @@ main = do
     ["list-nets"]        -> initialize >> withConnection uri listNets
     ["start", domain]    -> initialize >> withConnection uri (start domain)
     ["stop",  domain]    -> initialize >> withConnection uri (stop  domain)
+    ["hostname", domain] -> initialize >> withConnection uri (hostname domain)
     ["destroy", domain]  -> initialize >> withConnection uri (destroy domain)
     ["callback", domain] -> initialize >> eventRegisterDefaultImpl >> withConnection uri (doTest1 domain)
     ["capabilities"]     -> initialize >> withConnection uri (\c -> connectGetCapabilities c >>= putStrLn)
@@ -48,6 +49,12 @@ destroy domain conn = do
                                              putStrLn "Error:"
                                              print e)
   return ()
+
+hostname :: String -> Connection -> IO ()
+hostname domain conn = do
+  dom <- lookupDomainName conn domain
+  host <- getDomainHostname dom
+  putStrLn host
 
 doTest :: Connection -> IO ()
 doTest conn = do
