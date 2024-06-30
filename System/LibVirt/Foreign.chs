@@ -684,7 +684,7 @@ uploadStorageVolPartial path vol off len = do
   st <- newStream conn []
   {# call virStorageVolUpload #}
     (storageVolToPtr vol) (streamToPtr st) off len 0 >>= exceptionOnMinusOne
-  fd <- openFd path ReadOnly Nothing defaultFileFlags
+  fd <- openFd path ReadOnly defaultFileFlags
   alloca $ \fdptr -> do
     poke fdptr fd
     {# call virStreamSendAll #}
