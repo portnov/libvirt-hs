@@ -28,6 +28,7 @@ Extra-source-files:  Test.hs
 
 -- Constraint on the version of Cabal needed to build this package.
 Cabal-version:       >=1.10
+Default-Language: Haskell2010
 
 
 Library
