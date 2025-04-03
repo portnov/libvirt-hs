@@ -1,4 +1,5 @@
 {-# LANGUAGE ForeignFunctionInterface, StandaloneDeriving, DeriveDataTypeable, EmptyDataDecls #-}
+{-# LANGUAGE CPP #-}
 
 {# context lib="virt" prefix="vir" #}
 
@@ -684,7 +685,11 @@ uploadStorageVolPartial path vol off len = do
   st <- newStream conn []
   {# call virStorageVolUpload #}
     (storageVolToPtr vol) (streamToPtr st) off len 0 >>= exceptionOnMinusOne
+#if MIN_VERSION_unix(2,8,0)
+  fd <- openFd path ReadOnly defaultFileFlags
+#else
   fd <- openFd path ReadOnly Nothing defaultFileFlags
+#endif
   alloca $ \fdptr -> do
     poke fdptr fd
     {# call virStreamSendAll #}
